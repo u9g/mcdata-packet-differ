@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
     };
     return config;
   },
-  output: "export", // <=== enables static exports
+  output: "out", // <=== enables static exports
   reactStrictMode: true,
 };
 
