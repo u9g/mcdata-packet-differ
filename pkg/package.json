@@ -1,0 +1,15 @@
+{
+  "name": "alternate-protocol-lang",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "mylib_bg.wasm",
+    "mylib.js",
+    "mylib.d.ts"
+  ],
+  "main": "mylib.js",
+  "types": "mylib.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
