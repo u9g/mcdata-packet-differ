@@ -33,7 +33,12 @@ jobs:
       - name: Build with Next.js 🏗️
         run: npx next build
 
-      - run: ls -la .
+      - name: Debug output directory
+        run: |
+          ls -la ..
+          pwd
+          ls -la
+          ls -la out || echo "out directory does not exist"
 
       - name: Upload artifact 📡
         uses: actions/upload-pages-artifact@v3
