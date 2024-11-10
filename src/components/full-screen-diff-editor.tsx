@@ -57,31 +57,6 @@ async function callWasm(): Promise<
   }
 }
 
-async function convertProtocolToTypescriptAndLocs(
-  version: string
-): Promise<string | undefined> {
-  try {
-    await wasm.default({
-      initial: 512, // Allocate 512 pages (32MB) of memory
-      maximum: 1024, // Allow growth up to 1024 pages (64MB)
-    });
-
-    const response = await fetch(
-      `https://raw.githubusercontent.com/PrismarineJS/minecraft-data/refs/heads/master/data/pc/${version}/protocol.json`
-    );
-    const data = await response.json();
-
-    try {
-      const result = wasm.json2ts(JSON.stringify(data)); // Make sure to stringify the data
-      return result;
-    } catch (e) {
-      console.error("Error processing JSON:", e);
-    }
-  } catch (e) {
-    console.error("Error initializing WASM:", e);
-  }
-}
-
 const toConvert = ["1.8", "1.12.2", "1.13", "1.15", "1.16", "1.20.2", "1.21.1"];
 
 export function FullScreenDiffEditor() {
@@ -119,8 +94,9 @@ export function FullScreenDiffEditor() {
       }
       setData(results);
     });
-  }, []);
-  const [modifiedSelected, setModifiedSelected] = useState<string>("1.21.1");
+  }, [data]);
+  const [modifiedSelected /*, setModifiedSelected*/] =
+    useState<string>("1.21.1");
 
   const [selectedButton, setSelectedButton] = useState<string>("1.8");
   const [selectedHighlight, setSelectedHighlight] = useState<string>("none");
@@ -288,7 +264,7 @@ export function FullScreenDiffEditor() {
               options={options}
               height="100%"
               onMount={(editor) => {
-                diffEditorRef.current = editor;
+                (diffEditorRef.current as any) = editor;
                 originalDecorationsRef.current = editor
                   .getOriginalEditor()
                   .createDecorationsCollection();
