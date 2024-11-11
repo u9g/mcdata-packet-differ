@@ -8,7 +8,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useEffect, useState, useRef } from "react";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { useEffect, useState, useRef, useReducer } from "react";
 import { DiffEditor, DiffEditorProps, useMonaco } from "@monaco-editor/react";
 
 import prettier from "prettier/standalone";
@@ -59,48 +60,81 @@ async function callWasm(): Promise<
   }
 }
 
-const toConvert = ["1.8", "1.12.2", "1.13", "1.15", "1.16", "1.20.2", "1.21.1"];
+async function generateData(version: string): Promise<{
+  ts: string;
+  locs: X;
+}> {
+  const response = await fetch(
+    `https://raw.githubusercontent.com/PrismarineJS/minecraft-data/refs/heads/master/data/pc/${version}/protocol.json`
+  );
+  const data = await response.json();
+
+  const _wasm = await callWasm();
+  if (!_wasm) throw new Error("Failed to initialize WASM");
+
+  const { json2ts, ts2locs } = _wasm;
+
+  const unformatted = await json2ts(JSON.stringify(data));
+
+  const ts = await prettier.format(unformatted, {
+    parser: "typescript",
+    plugins: [prettierPluginTypescript, prettierPluginEstree],
+  });
+
+  const locs = await ts2locs(ts);
+
+  return { ts, locs: JSON.parse(locs) };
+}
+
+const EMPTY = { ts: "", locs: [] };
+
+function reducer(
+  state: Record<string, { ts: string; locs: X } | null> | null,
+  action:
+    | { type: "set_versions"; versions: string[] }
+    | { type: "set"; version: string; data: { ts: string; locs: X } }
+    | { type: "fetching"; version: string }
+) {
+  if (action.type === "set") {
+    return { ...state, [action.version]: action.data };
+  } else if (action.type === "set_versions") {
+    return Object.fromEntries(
+      action.versions.map((version) => {
+        return [version, null];
+      })
+    );
+  } else if (action.type === "fetching") {
+    return { ...state, [action.version]: EMPTY };
+  }
+  return state;
+}
 
 export function FullScreenDiffEditor() {
-  const [data, setData] = useState<Record<
-    string,
-    { ts: string; locs: X }
-  > | null>(null);
+  // const [data, setData] = useState<Record<
+  //   string,
+  //   { ts: string; locs: X }
+  // > | null>(null);
+
+  const [data, dispatch] = useReducer(reducer, null);
 
   useEffect(() => {
-    Promise.all(
-      toConvert.map(async (version) => {
-        const response = await fetch(
-          `https://raw.githubusercontent.com/PrismarineJS/minecraft-data/refs/heads/master/data/pc/${version}/protocol.json`
-        );
-        const data = await response.json();
-
-        const _wasm = await callWasm();
-        if (!_wasm) throw new Error("Failed to initialize WASM");
-
-        const { json2ts, ts2locs } = _wasm;
-
-        const ts = await json2ts(JSON.stringify(data));
-
-        const formatted = await prettier.format(ts, {
-          parser: "typescript",
-          plugins: [prettierPluginTypescript, prettierPluginEstree],
-        });
-
-        return [version, formatted, await ts2locs(formatted)];
+    fetch(
+      "https://raw.githubusercontent.com/PrismarineJS/minecraft-data/refs/heads/master/data/dataPaths.json"
+    )
+      .then((x) => x.json())
+      .then((x) => {
+        return [
+          ...new Set(
+            Object.entries(x["pc"] as Record<string, any>)
+              .map((x) => x[1].protocol)
+              .filter((x: string | undefined): x is string => x !== undefined)
+              .map((x: string) => x.split("/")[1])
+          ),
+        ];
       })
-    ).then((converted) => {
-      console.log(converted);
-      const results: Record<string, { ts: string; locs: X }> = {};
-      for (const [version, ts, locs] of converted) {
-        if (data === undefined) {
-          console.error(`Failed to convert protocol: ${version}`);
-        } else {
-          results[version as string] = { ts, locs: JSON.parse(locs) };
-        }
-      }
-      setData(results);
-    });
+      .then((versions) => {
+        dispatch({ type: "set_versions", versions });
+      });
   }, []);
   const [modifiedSelected /*, setModifiedSelected*/] =
     useState<string>("1.21.1");
@@ -123,6 +157,22 @@ export function FullScreenDiffEditor() {
     setSelectedHighlight(value);
   };
 
+  function requestSpecific(version: string) {
+    if (data === null) {
+      return EMPTY;
+    } else if (data[version] !== null) {
+      return data[version];
+    } else {
+      dispatch({ type: "fetching", version });
+      generateData(version).then((data) => {
+        console.trace({ type: "set", version, data });
+        dispatch({ type: "set", version, data });
+      });
+
+      return EMPTY;
+    }
+  }
+
   useEffect(() => {
     if (
       !data ||
@@ -133,10 +183,10 @@ export function FullScreenDiffEditor() {
     )
       return;
 
-    const originalHighlight = data[selectedButton].locs.find(
+    const originalHighlight = requestSpecific(selectedButton).locs.find(
       (x) => x[0] === selectedHighlight
     );
-    const modifiedHighlight = data[modifiedSelected].locs.find(
+    const modifiedHighlight = requestSpecific(modifiedSelected).locs.find(
       (x) => x[0] === selectedHighlight
     )!;
 
@@ -178,7 +228,7 @@ export function FullScreenDiffEditor() {
         originalDecorationsRef.current?.set([]);
       }
     }
-  }, [selectedButton, selectedHighlight, modifiedDecorationsRef]);
+  }, [selectedButton, selectedHighlight, modifiedDecorationsRef, data]);
 
   const options: DiffEditorProps["options"] = {
     renderSideBySide: true,
@@ -226,18 +276,21 @@ export function FullScreenDiffEditor() {
         <>
           <div className="flex justify-between items-center p-4 bg-gray-800 text-white">
             <div className="flex space-x-2">
-              {Object.keys(data).map((x) => (
-                <Button
-                  key={x}
-                  onClick={() => handleButtonClick(x)}
-                  disabled={selectedButton === x}
-                  aria-pressed={selectedButton === x}
-                  variant={selectedButton === x ? "default" : "outline"}
-                  className="bg-gray-700 text-white border-gray-600 hover:bg-gray-600"
-                >
-                  {x}
-                </Button>
-              ))}
+              <ScrollArea className="rounded-md whitespace-nowrap w-[90vw]">
+                {Object.keys(data).map((x) => (
+                  <Button
+                    key={x}
+                    onClick={() => handleButtonClick(x)}
+                    disabled={selectedButton === x}
+                    aria-pressed={selectedButton === x}
+                    variant={selectedButton === x ? "default" : "outline"}
+                    className="bg-gray-700 text-white border-gray-600 hover:bg-gray-600"
+                  >
+                    {x}
+                  </Button>
+                ))}
+                <ScrollBar orientation="horizontal" />
+              </ScrollArea>
             </div>
             <Select
               value={selectedHighlight}
@@ -250,7 +303,7 @@ export function FullScreenDiffEditor() {
                 <SelectItem key="none" value="none">
                   No packet selected
                 </SelectItem>
-                {data[modifiedSelected].locs.map((x) => (
+                {requestSpecific(modifiedSelected).locs.map((x) => (
                   <SelectItem key={x[0]} value={x[0]}>
                     {x[0]}
                   </SelectItem>
@@ -260,8 +313,8 @@ export function FullScreenDiffEditor() {
           </div>
           <div id="monaco-diff-editor" className="flex-grow">
             <DiffEditor
-              original={data[selectedButton].ts}
-              modified={data[modifiedSelected].ts}
+              original={requestSpecific(selectedButton).ts}
+              modified={requestSpecific(modifiedSelected).ts}
               language="javascript"
               theme="customTheme"
               options={options}
