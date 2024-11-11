@@ -277,18 +277,20 @@ export function FullScreenDiffEditor() {
           <div className="flex justify-between items-center p-4 bg-gray-800 text-white">
             <div className="flex space-x-2">
               <ScrollArea className="rounded-md whitespace-nowrap w-[90vw]">
-                {Object.keys(data).map((x) => (
-                  <Button
-                    key={x}
-                    onClick={() => handleButtonClick(x)}
-                    disabled={selectedButton === x}
-                    aria-pressed={selectedButton === x}
-                    variant={selectedButton === x ? "default" : "outline"}
-                    className="bg-gray-700 text-white border-gray-600 hover:bg-gray-600"
-                  >
-                    {x}
-                  </Button>
-                ))}
+                {Object.keys(data)
+                  .filter((x) => x !== modifiedSelected)
+                  .map((x) => (
+                    <Button
+                      key={x}
+                      onClick={() => handleButtonClick(x)}
+                      disabled={selectedButton === x}
+                      aria-pressed={selectedButton === x}
+                      variant={selectedButton === x ? "default" : "outline"}
+                      className="bg-gray-700 text-white border-gray-600 hover:bg-gray-600"
+                    >
+                      {x}
+                    </Button>
+                  ))}
                 <ScrollBar orientation="horizontal" />
               </ScrollArea>
             </div>
