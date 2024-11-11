@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
       asyncWebAssembly: true,
       layers: true,
     };
+
     return config;
   },
   output: "export", // <=== enables static exports

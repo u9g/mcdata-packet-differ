@@ -11,6 +11,10 @@ import {
 import { useEffect, useState, useRef } from "react";
 import { DiffEditor, DiffEditorProps, useMonaco } from "@monaco-editor/react";
 
+import prettier from "prettier/standalone";
+import * as prettierPluginTypescript from "prettier/plugins/typescript";
+import * as prettierPluginEstree from "prettier/plugins/estree";
+
 // Function to move the cursor and scroll to a specific position
 function goToPosition(
   offset: [number, number, number, number],
@@ -18,8 +22,6 @@ function goToPosition(
     NonNullable<ReturnType<typeof useMonaco>>["editor"]["create"]
   >
 ) {
-  console.log({ lineNumber: offset[0] + 1, column: offset[1] + 1 });
-
   // Move the cursor to the specified position
   editor.setPosition({ lineNumber: offset[0] + 1, column: offset[1] + 1 });
 
@@ -80,7 +82,12 @@ export function FullScreenDiffEditor() {
 
         const ts = await json2ts(JSON.stringify(data));
 
-        return [version, ts, await ts2locs(ts)];
+        const formatted = await prettier.format(ts, {
+          parser: "typescript",
+          plugins: [prettierPluginTypescript, prettierPluginEstree],
+        });
+
+        return [version, formatted, await ts2locs(formatted)];
       })
     ).then((converted) => {
       console.log(converted);
@@ -94,7 +101,7 @@ export function FullScreenDiffEditor() {
       }
       setData(results);
     });
-  }, [data]);
+  }, []);
   const [modifiedSelected /*, setModifiedSelected*/] =
     useState<string>("1.21.1");
 
@@ -110,30 +117,34 @@ export function FullScreenDiffEditor() {
 
   const handleButtonClick = (button: string) => {
     setSelectedButton(button);
-    applyHighlight(selectedHighlight);
   };
 
   const handleHighlightChange = (value: string) => {
     setSelectedHighlight(value);
-    applyHighlight(value);
   };
 
-  const applyHighlight = (highlightKey: string) => {
-    if (!data || !diffEditorRef.current || !monaco || highlightKey == "none")
+  useEffect(() => {
+    if (
+      !data ||
+      !modifiedDecorationsRef.current ||
+      !monaco ||
+      !diffEditorRef.current ||
+      selectedHighlight == "none"
+    )
       return;
 
     const originalHighlight = data[selectedButton].locs.find(
-      (x) => x[0] === highlightKey
+      (x) => x[0] === selectedHighlight
     );
     const modifiedHighlight = data[modifiedSelected].locs.find(
-      (x) => x[0] === highlightKey
+      (x) => x[0] === selectedHighlight
     )!;
 
     // Clear existing decorations
     originalDecorationsRef.current?.clear();
     modifiedDecorationsRef.current?.clear();
 
-    if (highlightKey !== "none") {
+    if (selectedHighlight !== "none") {
       modifiedDecorationsRef.current?.set([
         {
           range: new monaco.Range(
@@ -167,7 +178,7 @@ export function FullScreenDiffEditor() {
         originalDecorationsRef.current?.set([]);
       }
     }
-  };
+  }, [selectedButton, selectedHighlight, modifiedDecorationsRef]);
 
   const options: DiffEditorProps["options"] = {
     renderSideBySide: true,
@@ -248,14 +259,6 @@ export function FullScreenDiffEditor() {
             </Select>
           </div>
           <div id="monaco-diff-editor" className="flex-grow">
-            {(() => {
-              console.log({
-                data2: data,
-                selectedButton,
-                data: data[selectedButton],
-              });
-              return false;
-            })()}
             <DiffEditor
               original={data[selectedButton].ts}
               modified={data[modifiedSelected].ts}
@@ -271,7 +274,6 @@ export function FullScreenDiffEditor() {
                 modifiedDecorationsRef.current = editor
                   .getModifiedEditor()
                   .createDecorationsCollection();
-                applyHighlight(selectedHighlight);
               }}
             />
           </div>
